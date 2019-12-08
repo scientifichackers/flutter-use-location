@@ -44,7 +44,6 @@ class UseLocation {
     });
 
     var status = InternalStatus.values[index];
-    print('>>> $status');
 
     switch (status) {
       case InternalStatus.showPermissionRationale:
@@ -99,7 +98,6 @@ class UseLocation {
         break;
     }
 
-    print("--- $index");
     return UseLocationStatus.values[index];
   }
 }
