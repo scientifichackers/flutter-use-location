@@ -1,19 +1,13 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
+
+import 'src/show_rationale.dart' as sr;
+import 'src/stubs.dart';
 
 enum UseLocationStatus {
   ok,
   enableDenied,
   permissionDenied,
-  waiting,
-}
-
-enum InternalStatus {
-  ok,
-  enableDenied,
-  permissionDenied,
-  showPermissionRationale,
-  openPermissionSettings,
-  openEnableSettings
 }
 
 enum LocationPermissionType {
@@ -27,27 +21,34 @@ enum LocationPermissionType {
 /// This method should return a Boolean value,
 /// indicating whether the library should continue
 /// asking the user for that permission or not.
-typedef Future<bool> ShowRationale();
+typedef Future<bool> ShowRationale(BuildContext context);
+
+bool _indexOutOfBounds(int index) {
+  return index > UseLocationStatus.values.length - 1;
+}
 
 class UseLocation {
   static const channel =
       const MethodChannel('com.scientifichackers.use_location');
 
-  static Future<UseLocationStatus> useLocation({
+  static Future<UseLocationStatus> useLocation(
+    BuildContext context, {
     ShowRationale showPermissionRationale,
-    ShowRationale showEnableRationale,
+    ShowRationale showPermissionSettingsRationale,
+    ShowRationale showEnableSettingsRationale,
     LocationPermissionType permissionType =
         LocationPermissionType.accessFineLocation,
   }) async {
-    var index = await channel.invokeMethod("useLocation", {
-      'permissionType': permissionType.index,
-    });
+    showPermissionRationale ??= sr.showPermissionRationale;
+    showPermissionSettingsRationale ??= sr.showPermissionSettingsRationale;
+    showEnableSettingsRationale ??= sr.showEnableSettingsRationale;
 
-    var status = InternalStatus.values[index];
+    var args = {'permissionType': permissionType.index};
+    var index = await channel.invokeMethod("useLocation", args);
 
-    switch (status) {
+    switch (InternalStatus.values[index]) {
       case InternalStatus.showPermissionRationale:
-        var shouldContinue = await showPermissionRationale?.call() ?? true;
+        var shouldContinue = await showPermissionRationale(context);
         if (!shouldContinue) {
           return UseLocationStatus.permissionDenied;
         }
@@ -56,43 +57,37 @@ class UseLocation {
           'permissionType': permissionType.index,
           'considerShowRationale': false,
         });
-
-        if (index == InternalStatus.openPermissionSettings.index) {
-          // Holds true when the user selects "Never ask Again" for the first time.
-          //
-          // This check is necessary because android doesn't
-          // provide a way to distinguish between the first
-          // and subsequent calls for requesting permission
-          // after "Never ask Again" is selected.
-          //
-          // The plugin code simply expects the user to
-          // manually grant permission every-time,
-          // but we don't want that for the first time.
-
+        if (_indexOutOfBounds(index)) {
           return UseLocationStatus.permissionDenied;
         }
 
         break;
 
       case InternalStatus.openPermissionSettings:
-        var shouldContinue = await showPermissionRationale?.call() ?? true;
-        if (!shouldContinue) {
+        var proceed = await showPermissionSettingsRationale(context);
+        if (!proceed) {
           return UseLocationStatus.permissionDenied;
         }
 
-        await channel.invokeMethod("openPermissionSettings");
+        index = await channel.invokeMethod("openPermissionSettings", args);
+        if (_indexOutOfBounds(index)) {
+          return UseLocationStatus.permissionDenied;
+        }
 
-        return UseLocationStatus.waiting;
+        break;
 
       case InternalStatus.openEnableSettings:
-        var shouldContinue = await showEnableRationale?.call() ?? true;
-        if (!shouldContinue) {
+        var proceed = await showEnableSettingsRationale(context);
+        if (!proceed) {
           return UseLocationStatus.enableDenied;
         }
 
-        await channel.invokeMethod("openEnableSettings");
+        index = await channel.invokeMethod("openEnableSettings", args);
+        if (_indexOutOfBounds(index)) {
+          return UseLocationStatus.enableDenied;
+        }
 
-        return UseLocationStatus.waiting;
+        break;
 
       default:
         break;

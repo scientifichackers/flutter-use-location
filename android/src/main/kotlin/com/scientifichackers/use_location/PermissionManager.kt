@@ -23,9 +23,6 @@ import io.flutter.plugin.common.PluginRegistry.RequestPermissionsResultListener
 import java.util.ArrayDeque
 import java.util.NoSuchElementException
 
-const val REQUEST_ENABLE_LOC = 1
-const val REQUEST_LOC_PERM = 2
-
 enum class InternalStatus {
     OK,
     ENABLE_DENIED,
@@ -46,8 +43,10 @@ class PermissionManager(val registrar: PluginRegistry.Registrar) :
     val ctx: Context
         get() = activity.applicationContext
 
-    val enableCallbackQueue = ArrayDeque<InternalStatusCallback>()
-    val permissionCallbackQueue = ArrayDeque<Pair<String, InternalStatusCallback>>()
+    val requestEnableResultCode = randomResultCode()
+    val requestPermissionResultCode = randomResultCode()
+    val enableCallback = ArrayDeque<InternalStatusCallback>()
+    val permissionCallback = ArrayDeque<Pair<String, InternalStatusCallback>>()
 
     init {
         registrar.addActivityResultListener(this)
@@ -61,8 +60,8 @@ class PermissionManager(val registrar: PluginRegistry.Registrar) :
 
     @RequiresApi(Build.VERSION_CODES.M)
     fun requestPermission(perm: String, callback: InternalStatusCallback) {
-        activity.requestPermissions(arrayOf(perm), REQUEST_LOC_PERM)
-        permissionCallbackQueue.add(Pair(perm, callback))
+        activity.requestPermissions(arrayOf(perm), requestPermissionResultCode)
+        permissionCallback.add(Pair(perm, callback))
     }
 
     fun ensurePermission(
@@ -101,8 +100,11 @@ class PermissionManager(val registrar: PluginRegistry.Registrar) :
             } catch (e: ApiException) {
                 if (e.statusCode == LocationSettingsStatusCodes.RESOLUTION_REQUIRED) {
                     val resolvable = e as ResolvableApiException
-                    resolvable.startResolutionForResult(activity, REQUEST_ENABLE_LOC)
-                    enableCallbackQueue.add(callback)
+                    resolvable.startResolutionForResult(
+                        activity,
+                        requestEnableResultCode
+                    )
+                    enableCallback.add(callback)
                     return@addOnCompleteListener
                 }
                 null
@@ -149,42 +151,33 @@ class PermissionManager(val registrar: PluginRegistry.Registrar) :
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, intent: Intent?): Boolean {
-        when (requestCode) {
-            REQUEST_ENABLE_LOC -> {
-                val callback = try {
-                    enableCallbackQueue.remove()
-                } catch (e: NoSuchElementException) {
-                    return false
-                }
-
-                callback(
-                    when (resultCode) {
-                        Activity.RESULT_OK -> {
-                            InternalStatus.OK
-                            // onEnableSuccess(result)
-                            // if (LocationSettingsStates.fromIntent(intent).isLocationUsable) {
-                            //     onEnableSuccess(result)
-                            // } else {
-                            //     result.success(InternalStatus.ENABLE_DENIED.ordinal)
-                            // }
-                        }
-                        Activity.RESULT_CANCELED -> {
-                            InternalStatus.ENABLE_DENIED
-                        }
-                        else -> {
-                            throw IllegalArgumentException(
-                                "unexpected \"resultCode\" for REQUEST_ENABLE_LOC { $resultCode }"
-                            )
-                        }
-                    }
-                )
-
-                return true
-            }
-            else -> {
-                return false
-            }
+        if (requestCode != requestEnableResultCode) {
+            return false
         }
+
+        val callback = try {
+            enableCallback.remove()
+        } catch (e: NoSuchElementException) {
+            return false
+        }
+
+        callback(
+            when (resultCode) {
+                Activity.RESULT_OK -> {
+                    InternalStatus.OK
+                }
+                Activity.RESULT_CANCELED -> {
+                    InternalStatus.ENABLE_DENIED
+                }
+                else -> {
+                    throw IllegalArgumentException(
+                        "unexpected \"resultCode\" for requestEnableResultCode { $resultCode }"
+                    )
+                }
+            }
+        )
+
+        return true
     }
 
     override fun onRequestPermissionsResult(
@@ -192,12 +185,12 @@ class PermissionManager(val registrar: PluginRegistry.Registrar) :
         permissions: Array<out String>?,
         grantResults: IntArray?
     ): Boolean {
-        if (requestCode != REQUEST_LOC_PERM) {
+        if (requestCode != requestPermissionResultCode) {
             return false
         }
 
         val (perm, callback) = try {
-            permissionCallbackQueue.remove()
+            permissionCallback.remove()
         } catch (e: NoSuchElementException) {
             return false
         }

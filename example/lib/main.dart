@@ -45,22 +45,7 @@ class _MainState extends State<Main> {
             setState(() {
               status = null;
             });
-
-            var value = await UseLocation.useLocation(
-              showEnableRationale: () async {
-                return await showYesNoDialog(
-                  context,
-                  "Please enable location to continue.",
-                );
-              },
-              showPermissionRationale: () async {
-                return await showYesNoDialog(
-                  context,
-                  "Please grant location permission to continue.",
-                );
-              },
-            );
-
+            var value = await UseLocation.useLocation(context);
             setState(() {
               status = value;
             });
